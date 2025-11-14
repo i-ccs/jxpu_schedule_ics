@@ -1,0 +1,35 @@
+{
+  "name": "schedule-subscription-service",
+  "version": "1.0.0",
+  "description": "课表订阅服务 - 江西职业技术大学",
+  "main": "server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "test": "node scripts/test-api.js",
+    "test:sso": "node scripts/test-sso.js",
+    "test:ics": "node scripts/test-ics.js",
+    "db:viewer": "node scripts/db-viewer.js"
+  },
+  "keywords": [
+    "schedule",
+    "calendar",
+    "ics",
+    "subscription"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "axios": "^1.6.2",
+    "cheerio": "^1.0.0-rc.12",
+    "ical-generator": "^4.1.0",
+    "sqlite3": "^5.1.6"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
