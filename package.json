@@ -6,10 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "node scripts/test-api.js",
-    "test:sso": "node scripts/test-sso.js",
-    "test:ics": "node scripts/test-ics.js",
-    "db:viewer": "node scripts/db-viewer.js"
+    "test": "node scripts/test-api.js"
   },
   "keywords": [
     "schedule",
