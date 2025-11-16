@@ -91,7 +91,7 @@ npm run dev
 1. 重新登录教务系统
 2. 获取新的TGC Cookie
 3. 访问订阅服务首页
-4. 更新TGC Cooir
+4. 更新TGC Cookie
 5. 测试链接是否有用
 
 ### 数据库字段
