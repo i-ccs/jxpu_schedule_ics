@@ -66,7 +66,7 @@ function saveUser(token, cookies, semesterStart) {
 }
 
 function getUser(token) {
-    console.log(token);
+    // console.log(token);
     return new Promise((resolve, reject) => {
         db.get(
             'SELECT cookies, semester_start, cookie_valid FROM users WHERE token = ?',
@@ -136,7 +136,7 @@ async function fetchSchedule(cookies) {
         // 添加初始 TGC cookie
         Object.assign(cookieJar, cookies);
         
-        console.log('🔍 [调试] 开始Cookie:', cookieJar);
+        // console.log('🔍 [调试] 开始Cookie:', cookieJar);
 
         // 构建Cookie字符串的函数
         const getCookieString = () => {
@@ -171,7 +171,7 @@ async function fetchSchedule(cookies) {
             timeout: 15000
         });
 
-        console.log('   → 步骤1: SSO登录验证...');
+        // console.log('   → 步骤1: SSO登录验证...');
         // 步骤1: 访问CAS登录，携带TGC
         let response = await axiosInstance.get(
             `${CAS_URL}/login?service=${encodeURIComponent(JWXT_URL + '/jsxsd/sso.jsp')}`,
@@ -182,29 +182,29 @@ async function fetchSchedule(cookies) {
             }
         );
 
-        console.log('      状态:', response.status);
+        // console.log('      状态:', response.status);
         parseCookies(response.headers);
-        console.log('      Cookies更新:', Object.keys(cookieJar));
+        // console.log('      Cookies更新:', Object.keys(cookieJar));
 
         if (response.data.includes('<title>登录 - 江西职业技术大学</title>') || response.data.includes('login')) {
-            console.log('      ❌ 未成功登录到教务系统');
+            // console.log('      ❌ 未成功登录到教务系统');
             return { success: false, error: 'Cookie无效或已过期，未能登录教务系统' };
         }
         // 如果返回302跳转，获取ticket
         let ticket = null;
         if (response.status === 302 || response.status === 301) {
             const location = response.headers.location;
-            console.log('      重定向到:', location);
+            // console.log('      重定向到:', location);
             
             // 提取ticket
             const ticketMatch = location.match(/ticket=([^&]+)/);
             if (ticketMatch) {
                 ticket = ticketMatch[1];
-                console.log('      获得Ticket:', ticket.substring(0, 20) + '...');
+                // console.log('      获得Ticket:', ticket.substring(0, 20) + '...');
             }
         }
 
-        console.log('   → 步骤2: 访问教务系统SSO...');
+        // console.log('   → 步骤2: 访问教务系统SSO...');
         // 步骤2: 使用ticket访问教务系统
         const ssoUrl = ticket 
             ? `${JWXT_URL}/jsxsd/sso.jsp?ticket=${ticket}`
@@ -216,14 +216,14 @@ async function fetchSchedule(cookies) {
             validateStatus: (status) => status >= 200 && status < 400
         });
 
-        console.log('      状态:', response.status);
+        // console.log('      状态:', response.status);
         parseCookies(response.headers);
-        console.log('      Cookies更新:', Object.keys(cookieJar));
+        // console.log('      Cookies更新:', Object.keys(cookieJar));
 
         // 处理可能的再次重定向
         if (response.status === 302 || response.status === 301) {
             const location = response.headers.location;
-            console.log('      再次重定向到:', location);
+            // console.log('      再次重定向到:', location);
             
             const finalUrl = location.startsWith('http') ? location : `${JWXT_URL}${location}`;
             response = await axiosInstance.get(finalUrl, {
@@ -233,32 +233,32 @@ async function fetchSchedule(cookies) {
             parseCookies(response.headers);
         }
 
-        console.log('   → 步骤3: 访问主页建立会话...');
+        // console.log('   → 步骤3: 访问主页建立会话...');
         // 步骤3: 访问主页
         response = await axiosInstance.get(
             `${JWXT_URL}/jsxsd/framework/xsMain.jsp`,
             { headers: { Cookie: getCookieString() } }
         );
 
-        console.log('      状态:', response.status);
+        // console.log('      状态:', response.status);
         parseCookies(response.headers);
         
         // 检查是否成功登录（查找常见的登录页面特征）
         
 
-        console.log('   → 步骤4: 获取课表数据...');
+        // console.log('   → 步骤4: 获取课表数据...');
         // 步骤4: 获取课表
         response = await axiosInstance.get(
             `${JWXT_URL}/jsxsd/xskb/xskb_list.do`,
             { headers: { Cookie: getCookieString() } }
         );
 
-        console.log('      状态:', response.status);
-        console.log('      响应长度:', response.data.length);
-        console.log('      包含课表标题:', response.data.includes('<title>学期理论课表</title>'));
+        // console.log('      状态:', response.status);
+        // console.log('      响应长度:', response.data.length);
+        // console.log('      包含课表标题:', response.data.includes('<title>学期理论课表</title>'));
 
         if (response.status === 200 && response.data.includes('<title>学期理论课表</title>')) {
-            console.log('   ✅ 课表获取成功！');
+            // conole.log('   ✅ 课表获取成功！');
             return { success: true, html: response.data };
         }
 
@@ -266,15 +266,15 @@ async function fetchSchedule(cookies) {
         if (process.env.NODE_ENV === 'development') {
             const fs = require('fs');
             fs.writeFileSync('debug_response.html', response.data);
-            console.log('   💾 响应已保存到 debug_response.html');
+            // conole.log.log('   💾 响应已保存到 debug_response.html');
         }
 
         return { success: false, error: 'Cookie可能已过期或响应异常' };
     } catch (error) {
-        console.error(`❌ 获取课表失败: ${error.message}`);
+        // conole.log.error(`❌ 获取课表失败: ${error.message}`);
         if (error.response) {
-            console.error(`   响应状态: ${error.response.status}`);
-            console.error(`   响应数据长度: ${error.response.data?.length || 0}`);
+            // conole.log.error(`   响应状态: ${error.response.status}`);
+            // conole.log.error(`   响应数据长度: ${error.response.data?.length || 0}`);
         }
         return { success: false, error: error.message };
     }
@@ -902,11 +902,11 @@ app.post('/api/register', async (req, res) => {
         // 保存用户信息
         await saveUser(token, cookies, semester_start);
 
-        console.log(`✅ 新用户注册成功: ${token.substring(0, 8)}...`);
+        // conole.log.log(`✅ 新用户注册成功: ${token.substring(0, 8)}...`);
 
         res.json({ success: true, token });
     } catch (error) {
-        console.error('注册失败:', error);
+        // conole.log.error('注册失败:', error);
         res.json({ success: false, error: `验证失败: ${error.message}` });
     }
 });
@@ -940,14 +940,14 @@ app.post('/api/update-cookie', async (req, res) => {
         // 更新Cookie
         await updateCookies(token, cookies);
 
-        console.log(`✅ Cookie更新成功: ${token.substring(0, 8)}...`);
+        // conole.log.log(`✅ Cookie更新成功: ${token.substring(0, 8)}...`);
 
         res.json({ 
             success: true, 
             message: 'Cookie已更新，订阅链接保持不变' 
         });
     } catch (error) {
-        console.error('更新Cookie失败:', error);
+        // conole.log.error('更新Cookie失败:', error);
         res.json({ success: false, error: `更新失败: ${error.message}` });
     }
 });
@@ -983,7 +983,7 @@ app.get('/schedule/:token', async (req, res) => {
         if (!result.success) {
             // 标记Cookie为无效
             await markCookieInvalid(token);
-            console.log(`⚠️  Cookie过期: ${token.substring(0, 8)}...`);
+            // conole.log.log(`⚠️  Cookie过期: ${token.substring(0, 8)}...`);
             return res.status(401).send(`❌ Cookie已过期
 
 请按以下步骤更新Cookie（订阅链接保持不变）：
@@ -1009,7 +1009,7 @@ app.get('/schedule/:token', async (req, res) => {
         // 更新同步时间
         await updateLastSync(token);
 
-        console.log(`✅ 课表同步成功: ${token.substring(0, 8)}... (${courses.length}门课程)`);
+        // conole.log.log(`✅ 课表同步成功: ${token.substring(0, 8)}... (${courses.length}门课程)`);
 
         // 返回ICS文件
         res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
@@ -1018,7 +1018,7 @@ app.get('/schedule/:token', async (req, res) => {
         res.send(icsData);
 
     } catch (error) {
-        console.error('获取课表错误:', error);
+        // conole.log.error('获取课表错误:', error);
         res.status(500).send(`❌ 服务器错误: ${error.message}`);
     }
 });
@@ -1049,29 +1049,29 @@ async function start() {
         await initDB();
         
         app.listen(PORT, '0.0.0.0', () => {
-            console.log('='.repeat(60));
-            console.log('📅 课表订阅服务启动成功');
-            console.log('='.repeat(60));
-            console.log(`🌐 访问地址: http://localhost:${PORT}`);
-            console.log(`📊 统计接口: http://localhost:${PORT}/api/stats`);
-            console.log('='.repeat(60));
-            console.log('💡 功能特性:');
-            console.log('   - 订阅链接永久有效');
-            console.log('   - Cookie过期可在线更新');
-            console.log('   - 无需修改日历订阅');
-            console.log('='.repeat(60));
+            // console.log('='.repeat(60));
+            // console.log('📅 课表订阅服务启动成功');
+            // console.log('='.repeat(60));
+            // console.log(`🌐 访问地址: http://localhost:${PORT}`);
+            // console.log(`📊 统计接口: http://localhost:${PORT}/api/stats`);
+            // console.log('='.repeat(60));
+            // console.log('💡 功能特性:');
+            // console.log('   - 订阅链接永久有效');
+            // console.log('   - Cookie过期可在线更新');
+            // console.log('   - 无需修改日历订阅');
+            // console.log('='.repeat(60));
         });
     } catch (error) {
-        console.error('启动失败:', error);
+        // console.error('启动失败:', error);
         process.exit(1);
     }
 }
 
 // 优雅关闭
 process.on('SIGINT', () => {
-    console.log('\n👋 正在关闭服务...');
+    // console.log('\n👋 正在关闭服务...');
     db.close(() => {
-        console.log('✅ 数据库已关闭');
+        // console.log('✅ 数据库已关闭');
         process.exit(0);
     });
 });
