@@ -1,24 +1,25 @@
 {
   "name": "schedule-subscription-service",
-  "version": "1.0.0",
-  "description": "课表订阅服务 - 江西职业技术大学",
-  "main": "server.js",
+  "version": "2.0.0",
+  "description": "课表订阅服务 - 江西职业技术大学 (Hono + Fetch API)",
+  "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "nodemon src/server.js",
-    "test": "node scripts/test-api.js"
+    "dev": "nodemon src/server.js"
   },
   "keywords": [
     "schedule",
     "calendar",
     "ics",
-    "subscription"
+    "subscription",
+    "hono",
+    "fetch"
   ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "express": "^4.18.2",
-    "axios": "^1.6.2",
+    "hono": "^4.0.0",
+    "@hono/node-server": "^1.8.0",
     "cheerio": "^1.0.0-rc.12",
     "ical-generator": "^4.1.0",
     "sqlite3": "^5.1.6"
@@ -27,6 +28,6 @@
     "nodemon": "^3.0.2"
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=18.0.0"
   }
 }
