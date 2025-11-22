@@ -8,7 +8,7 @@
 npm install
 ```
 
-### 2. 开发模式启动(自动重启)
+### 2. 开发模式启动(自动重启)(需要自行添加src/auth.js里的COUNT_ID的值)
 
 ```bash
 npm run dev
@@ -20,7 +20,7 @@ npm run dev
 npx nodemon src/server.js
 ```
 
-### 3. 普通模式启动
+### 3. 普通模式启动(需要自行添加src/auth.js里的COUNT_ID的值)
 
 ```bash
 npm start
