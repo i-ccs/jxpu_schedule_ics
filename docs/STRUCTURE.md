@@ -286,7 +286,7 @@ npm install --save-dev nodemon
 - 从文档中复制 `src/icaal.js`
 - 从文档中复制 `src/routers/router.js`
 
-### 6️⃣ 启动服务
+### 6️⃣ 启动服务(需要自行添加src/auth.js里的COUNT_ID的值)
 ```bash
 npm run dev  # 开发模式
 # 或
