@@ -21,7 +21,7 @@ async function start() {
         console.log('='.repeat(60));
         console.log('📅 课表订阅服务启动成功 (Hono + Fetch API)');
         console.log('='.repeat(60));
-        console.log(`🌐 访问地址: http://localhost:${PORT}`);
+        console.log(`🌐 访问地址: http://localhost:${PORT}/login`);
         console.log(`📊 统计接口: http://localhost:${PORT}/api/stats`);
         console.log('='.repeat(60));
         console.log('💡 功能特性:');

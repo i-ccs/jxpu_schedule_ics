@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>课表订阅服务 - 二维码登录</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+            max-width: 800px; 
+            margin: 0 auto; 
+            padding: 20px;
+            line-height: 1.6;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; margin-bottom: 10px; font-size: 28px; }
+        .subtitle { color: #666; margin-bottom: 30px; }
+        .qr-container {
+            text-align: center;
+            padding: 30px;
+            background: #f6f8fa;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .qr-image {
+            max-width: 300px;
+            margin: 20px auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+        }
+        .status {
+            margin: 15px 0;
+            font-size: 18px;
+            font-weight: 600;
+        }
+        .status.waiting { color: #666; }
+        .status.scanned { color: #0366d6; }
+        .status.success { color: #28a745; }
+        .status.error { color: #d73a49; }
+        .status.expired { color: #e36209; }
+        .status.existing { color: #0366d6; }
+        .form-group { margin: 20px 0; }
+        label { display: block; margin-bottom: 8px; font-weight: 600; color: #333; }
+        input { 
+            width: 100%; 
+            padding: 12px; 
+            border: 2px solid #e1e4e8;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        button { 
+            background: #0366d6;
+            color: white; 
+            padding: 12px 24px; 
+            border: none; 
+            border-radius: 6px; 
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            width: 100%;
+        }
+        button:hover { background: #0256c7; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .result { 
+            margin-top: 20px; 
+            padding: 15px; 
+            background: #f6f8fa;
+            border-radius: 6px;
+            border-left: 4px solid #0366d6;
+        }
+        .result.success { color: #28a745; background: #dcffe4; border-left-color: #28a745; }
+        .result.existing { color: #0366d6; background: #ddf4ff; border-left-color: #0366d6; }
+        .result.error { color: #d73a49; background: #ffeef0; border-left-color: #d73a49; }
+        code { 
+            background: #f6f8fa;
+            padding: 3px 6px; 
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            word-break: break-all;
+        }
+        .btn-copy {
+            background: #28a745;
+            margin-top: 10px;
+            padding: 8px 16px;
+            font-size: 14px;
+            width: auto;
+        }
+        .btn-delete {
+            background: #d73a49;
+            margin-top: 10px;
+            padding: 8px 16px;
+            font-size: 14px;
+            width: auto;
+            margin-left: 10px;
+        }
+        .btn-delete:hover {
+            background: #cb2431;
+        }
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 15px;
+        }
+        .timer {
+            font-size: 14px;
+            color: #666;
+            margin-top: 10px;
+        }
+        .log {
+            font-size: 12px;
+            color: #888;
+            margin-top: 5px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📅 课表订阅服务</h1>
+        <p class="subtitle">使用二维码扫码登录 (优化版 - 安全会话隔离 + 自动保活)</p>
+        
+        <div class="qr-container" id="qrContainer">
+            <div class="status waiting" id="status">正在加载二维码...</div>
+            <div id="qrImage"></div>
+            <div class="timer" id="timer"></div>
+            <div class="log" id="log"></div>
+            <button onclick="generateQR()" id="genBtn" style="display:none;">重新生成二维码</button>
+        </div>
+        
+        <div class="form-group" id="semesterGroup" style="display:none;">
+            <label>学期开始日期 (第一周周一):</label>
+            <input type="date" id="semester_start" value="2025-09-08">
+        </div>
+        
+        <div id="result" style="display:none;"></div>
+    </div>
+    
+    <script>
+    let pollInterval = null;
+    let currentQrCodeId = null;
+    let currentStateKey = null;
+    let currentUserId = null;
+    let currentUsername = null;
+    let expiryTime = null;
+    let timerInterval = null;
+    let keepaliveInterval = null;
+    
+    function log(msg) {
+        const logEl = document.getElementById('log');
+        logEl.textContent = msg;
+    }
+    
+    function updateTimer() {
+        if (!expiryTime) return;
+        
+        const now = Date.now();
+        const remaining = Math.max(0, Math.floor((expiryTime - now) / 1000));
+        
+        const minutes = Math.floor(remaining / 60);
+        const seconds = remaining % 60;
+        
+        const timerEl = document.getElementById('timer');
+        if (remaining > 0) {
+            timerEl.textContent = `⏱️ 有效期: ${minutes}:${seconds.toString().padStart(2, '0')}`;
+            timerEl.style.color = '#666';
+        } else {
+            timerEl.textContent = '⏱️ 二维码已过期';
+            timerEl.style.color = '#d73a49';
+            
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+            if (keepaliveInterval) {
+                clearInterval(keepaliveInterval);
+                keepaliveInterval = null;
+            }
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+            
+            const btn = document.getElementById('genBtn');
+            const status = document.getElementById('status');
+            btn.disabled = false;
+            btn.style.display = 'block';
+            btn.textContent = '重新生成二维码';
+            status.className = 'status expired';
+            status.textContent = '⏱️ 二维码已过期，请重新生成';
+        }
+    }
+    
+    async function generateQR() {
+        const btn = document.getElementById('genBtn');
+        const status = document.getElementById('status');
+        const qrImage = document.getElementById('qrImage');
+        const timer = document.getElementById('timer');
+        
+        btn.disabled = true;
+        btn.textContent = '生成中...';
+        status.className = 'status waiting';
+        status.textContent = '正在生成二维码...';
+        qrImage.innerHTML = '';
+        timer.textContent = '';
+        log('');
+        
+        if (timerInterval) clearInterval(timerInterval);
+        if (pollInterval) clearInterval(pollInterval);
+        if (keepaliveInterval) clearInterval(keepaliveInterval);
+        
+        try {            
+            const response = await fetch('/api/qr/generate');
+            const data = await response.json();
+            
+            if (data.success) {
+                currentQrCodeId = data.qrCodeId;
+                
+                log(`✅ 成功获取二维码ID: ${data.qrCodeId}`);
+                
+                const imageData = 'data:image/png;base64,' + data.imageData;
+                qrImage.innerHTML = '<img src="' + imageData + '" style="width: 100%; max-width: 250px;">';
+                status.textContent = '请使用手机扫码登录';
+                btn.textContent = '重新生成二维码';
+                btn.style.display = 'block';
+                btn.disabled = false;
+                document.getElementById('semesterGroup').style.display = 'block';
+                
+                expiryTime = Date.now() + 127 * 1000;
+                timerInterval = setInterval(updateTimer, 1000);
+                updateTimer();
+                
+                startKeepalive();
+                startPolling();
+            } else {
+                status.className = 'status error';
+                status.textContent = '生成失败: ' + data.error;
+                log('❌ ' + data.error);
+                btn.disabled = false;
+                btn.textContent = '重新生成';
+                btn.style.display = 'block';
+            }
+        } catch (error) {
+            status.className = 'status error';
+            status.textContent = '网络错误: ' + error.message;
+            log('❌ ' + error.message);
+            btn.disabled = false;
+            btn.textContent = '重新生成';
+            btn.style.display = 'block';
+        }
+    }
+    
+    async function startPolling() {
+        if (pollInterval) clearInterval(pollInterval);
+        
+        pollInterval = setInterval(async () => {
+            try {
+                const response = await fetch('/api/qr/status', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ 
+                        qrCodeId: currentQrCodeId
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.code === 1 && data.message === 'expired') {
+                    const status = document.getElementById('status');
+                    status.className = 'status expired';
+                    status.textContent = '⏱️ 二维码已过期，请重新生成';
+                    
+                    clearInterval(pollInterval);
+                    if (timerInterval) clearInterval(timerInterval);
+                    if (keepaliveInterval) clearInterval(keepaliveInterval);
+                    
+                    document.getElementById('genBtn').disabled = false;
+                    document.getElementById('genBtn').textContent = '重新生成二维码';
+                    document.getElementById('genBtn').style.display = 'block';
+                    return;
+                }
+                
+                if (data.success) {
+                    const status = document.getElementById('status');
+                    
+                    if (data.status === '0') {
+                        status.className = 'status waiting';
+                        status.textContent = '等待扫码...';
+                    } else if (data.status === '2') {
+                        status.className = 'status scanned';
+                        status.textContent = '✅ 已扫码，请在手机上确认登录';
+                    }else if (data.status === '4') {
+                        status.className = 'status cancel';
+                        status.textContent = '✅ 已取消，请重新获取二维码';
+                        // log('📱 检测到扫码');
+                    } else if (data.status === '3') {
+                        status.className = 'status success';
+                        status.textContent = '✅ 确认成功，正在检查用户...';
+                        
+                        clearInterval(pollInterval);
+                        if (timerInterval) clearInterval(timerInterval);
+                        if (keepaliveInterval) clearInterval(keepaliveInterval);
+                        
+                        currentStateKey = data.stateKey;
+                        currentUserId = data.userId;
+                        currentUsername = data.username;
+                                                
+                        await completeLogin();
+                    }
+                }
+            } catch (error) {
+                console.error('轮询失败:', error);
+            }
+        }, 2000);
+    }
+    
+    async function startKeepalive() {
+        if (keepaliveInterval) clearInterval(keepaliveInterval);
+        
+        await keepalive();
+        
+        keepaliveInterval = setInterval(async () => {
+            await keepalive();
+        }, 60 * 1000);
+    }
+    
+    async function keepalive() {
+        try {
+            const response = await fetch('/api/keepalive', {
+                method: 'POST',
+                credentials: 'include'
+            });
+            
+            const data = await response.json();
+            
+            if (!data.success)                 
+                console.warn('⚠️  保活失败:', data.error);  
+        } catch (error) {
+            console.error('❌ 保活请求失败:', error);
+        }
+    }
+    
+    async function completeLogin() {
+        const semester_start = document.getElementById('semester_start').value;
+        const result = document.getElementById('result');
+        const status = document.getElementById('status');
+        
+        status.textContent = '正在验证用户信息...';
+        log('🔍 检查用户是否已存在...');
+        
+        try {
+            const response = await fetch('/api/qr/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                credentials: 'include',
+                body: JSON.stringify({
+                    qrCodeId: currentQrCodeId,
+                    stateKey: currentStateKey,
+                    semester_start: semester_start
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                const url = window.location.origin + '/schedule/' + data.token;
+                
+                if (data.existing) {
+                    status.className = 'status existing';
+                    status.textContent = '✅ 检测到已存在的订阅！';
+                    log('🎉 无需重新生成，使用原订阅链接');
+                    
+                    result.className = 'result existing';
+                    result.innerHTML = `
+                        <h3 style="margin-bottom: 10px;">🔍 检测到您已有订阅链接！</h3>
+                        <p style="margin: 10px 0; color: #0366d6;">无需重新生成，以下是您的原订阅链接：</p>
+                        <p style="background: white; padding: 10px; border-radius: 4px; word-break: break-all;">
+                            <code>${url}</code>
+                        </p>
+                        <div class="action-buttons">
+                            <button class="btn-copy" onclick="copyToClipboard('${url}')">📋 复制链接</button>
+                            <button class="btn-copy" onclick="downloadICS('${data.token}')" style="background: #6f42c1;">📥 下载课表</button>
+                            <button class="btn-delete" onclick="deleteAccount('${data.token}')">🗑️ 删除账号</button>
+                        </div>
+                        <p style="margin-top: 15px; color: #666; font-size: 14px;">
+                            💡 将订阅链接添加到日历应用，或直接下载 ICS 文件导入
+                        </p>
+                    `;
+                } else {
+                    status.className = 'status success';
+                    status.textContent = '✅ 登录成功！';
+                    log('🎉 订阅链接生成成功');
+                    
+                    result.className = 'result success';
+                    result.innerHTML = `
+                        <h3 style="margin-bottom: 10px;">🎉 订阅链接生成成功！</h3>
+                        <p style="margin: 10px 0;"><strong>订阅链接：</strong></p>
+                        <p style="background: white; padding: 10px; border-radius: 4px; word-break: break-all;">
+                            <code>${url}</code>
+                        </p>
+                        <div class="action-buttons">
+                            <button class="btn-copy" onclick="copyToClipboard('${url}')">📋 复制链接</button>
+                            <button class="btn-copy" onclick="downloadICS('${data.token}')" style="background: #6f42c1;">📥 下载课表</button>
+                            <button class="btn-delete" onclick="deleteAccount('${data.token}')">🗑️ 删除账号</button>
+                        </div>
+                        <p style="margin-top: 15px; color: #666; font-size: 14px;">
+                            💡 将订阅链接添加到日历应用，或直接下载 ICS 文件导入
+                        </p>
+                    `;
+                }
+                
+                result.style.display = 'block';
+            } else {
+                status.className = 'status error';
+                status.textContent = '❌ 登录失败';
+                result.className = 'result error';
+                result.innerHTML = '<strong>错误:</strong> ' + data.error;
+                result.style.display = 'block';
+                log('❌ ' + data.error);
+                
+                document.getElementById('genBtn').disabled = false;
+                document.getElementById('genBtn').textContent = '重新生成二维码';
+                document.getElementById('genBtn').style.display = 'block';
+            }
+        } catch (error) {
+            status.className = 'status error';
+            status.textContent = '❌ 网络错误';
+            result.className = 'result error';
+            result.innerHTML = '<strong>错误:</strong> ' + error.message;
+            result.style.display = 'block';
+            log('❌ ' + error.message);
+            
+            document.getElementById('genBtn').disabled = false;
+            document.getElementById('genBtn').textContent = '重新生成二维码';
+            document.getElementById('genBtn').style.display = 'block';
+        }
+    }
+    
+    function copyToClipboard(text) {
+        navigator.clipboard.writeText(text).then(() => {
+            alert('✅ 已复制到剪贴板！');
+        }).catch(() => {
+            alert('❌ 复制失败，请手动复制');
+        });
+    }
+    
+    function downloadICS(token) {
+        const downloadUrl = window.location.origin + '/api/download/' + token;
+        window.location.href = downloadUrl;
+    }
+    
+    async function deleteAccount(token) {
+        const confirmed = confirm(
+            '⚠️ 确定要删除账号吗？\n\n' +
+            '删除后：\n' +
+            '• 订阅链接将立即失效\n' +
+            '• 所有数据将被永久删除\n' +
+            '• 日历应用中的课表将无法更新\n\n' +
+            '此操作不可恢复！'
+        );
+        
+        if (!confirmed) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/user/' + token, {
+                method: 'DELETE'
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                alert('✅ ' + data.message);
+                
+                document.getElementById('result').innerHTML = `
+                    <div style="text-align: center; padding: 20px;">
+                        <h3 style="color: #28a745; margin-bottom: 10px;">✅ 账号已删除</h3>
+                        <p style="color: #666;">您的订阅链接已失效</p>
+                        <p style="color: #666; margin-top: 10px;">如需继续使用，请重新扫码登录</p>
+                        <button class="btn-copy" onclick="location.reload()" style="margin-top: 15px;">
+                            🔄 重新开始
+                        </button>
+                    </div>
+                `;
+            } else {
+                alert('❌ 删除失败：' + data.error);
+            }
+        } catch (error) {
+            alert('❌ 网络错误：' + error.message);
+        }
+    }
+    
+    window.addEventListener('beforeunload', () => {
+        if (pollInterval) clearInterval(pollInterval);
+        if (timerInterval) clearInterval(timerInterval);
+        if (keepaliveInterval) clearInterval(keepaliveInterval);
+    });
+    
+    window.addEventListener('DOMContentLoaded', () => {
+        generateQR();
+    });
+    </script>
+</body>
+</html>

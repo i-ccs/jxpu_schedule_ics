@@ -1,4 +1,4 @@
-// ============= parser.js - 课表解析模块 =============
+// ============= parser.js - 课表解析模块 (优化版) =============
 const cheerio = require('cheerio');
 
 /**
@@ -92,7 +92,9 @@ function parseCourseInfo(text) {
     if (lines.length < 3) return null;
 
     const info = {};
-    info.name = lines[0].replace(/<[^>]*>/g, '');
+    
+    // 优化课程名称解析：先解码 HTML 实体，再移除标签
+    info.name = cleanCourseName(lines[0]);
 
     const teacherMatch = lines[1].match(/<font[^>]*>(.*?)<\/font>/i);
     info.teacher = teacherMatch ? teacherMatch[1] : lines[1].replace(/<[^>]*>/g, '');
@@ -106,6 +108,38 @@ function parseCourseInfo(text) {
     }
 
     return info.name ? info : null;
+}
+
+/**
+ * 清理课程名称（优化版）
+ * @param {string} rawName - 原始课程名称
+ * @returns {string} 清理后的课程名称
+ */
+function cleanCourseName(rawName) {
+    if (!rawName) return '';
+    
+    // 1. 先移除所有 HTML 标签
+    let cleaned = rawName.replace(/<[^>]*>/g, '');
+    
+    // 2. 解码常见的 HTML 实体
+    cleaned = cleaned
+        .replace(/&nbsp;/gi, ' ')     // 不间断空格
+        .replace(/&amp;/gi, '&')       // &
+        .replace(/&lt;/gi, '<')        // <
+        .replace(/&gt;/gi, '>')        // >
+        .replace(/&quot;/gi, '"')      // "
+        .replace(/&#39;/gi, "'")       // '
+        .replace(/&apos;/gi, "'")      // '
+        .replace(/&#(\d+);/gi, (match, dec) => String.fromCharCode(dec))  // 数字实体
+        .replace(/&#x([0-9a-f]+);/gi, (match, hex) => String.fromCharCode(parseInt(hex, 16)));  // 十六进制实体
+    
+    // 3. 去除首尾空白
+    cleaned = cleaned.trim();
+    
+    // 4. 将多个连续空格替换为单个空格
+    cleaned = cleaned.replace(/\s+/g, ' ');
+    
+    return cleaned;
 }
 
 /**
@@ -150,5 +184,6 @@ function parseLesson(timeStr, defaultValue) {
 }
 
 module.exports = {
-    parseSchedule
+    parseSchedule,
+    cleanCourseName
 };

@@ -29,7 +29,7 @@ function generateFingerprintId() {
  * 生成百度统计跟踪Cookie
  */
 function generateTrackingCookies() {
-    const siteId = 'COUNT_ID';
+    const siteId = COUNT_ID;
     const timestamp = Math.round(Date.now() / 1000);
     
     return {
@@ -274,7 +274,8 @@ async function pollQRCodeStatus(qrCodeId, cookies) {
                 success: true,
                 status: qrCode.status,
                 stateKey: data.data.stateKey,
-                userId: qrCode.userId,
+                userId: qrCode.accounts[0].id,
+                username: qrCode.accounts[0].username,
                 expired: false
             };
         }

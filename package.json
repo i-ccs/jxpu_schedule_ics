@@ -1,6 +1,6 @@
 {
   "name": "schedule-subscription-service",
-  "version": "0.2.",
+  "version": "0.2",
   "description": "课表订阅服务 - 江西职业技术大学 (Hono + Fetch API)",
   "main": "src/server.js",
   "scripts": {
