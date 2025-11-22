@@ -29,7 +29,7 @@ function generateFingerprintId() {
  * 生成百度统计跟踪Cookie
  */
 function generateTrackingCookies() {
-    const siteId = '';
+    const siteId = 'COUNT_ID';
     const timestamp = Math.round(Date.now() / 1000);
     
     return {
