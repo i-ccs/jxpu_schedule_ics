@@ -33,7 +33,7 @@
 npm install
 ```
 
-### 3. 启动服务
+### 3. 启动服务(需要自行添加src/auth.js里的COUNT_ID的值)
 
 ```bash
 # 生产环境
