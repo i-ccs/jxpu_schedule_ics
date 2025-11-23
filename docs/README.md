@@ -35,13 +35,13 @@
 ### 3. 配置 (可选) 修改 src/auth.js 中的 COUNT_ID 可添加百度统计 ID。
 
 ### 4. 启动服务
-  # 开发模式 (热重载)
+  ## 开发模式 (热重载)
   ```bash
     npm run dev
   ```
-  # 生产模式
+  ## 生产模式
   ```bash  
     npm start
   ```
-## 5. 访问 打开浏览器访问 `http://localhost:3000`
+### 5. 访问 打开浏览器访问 `http://localhost:3000`
 
