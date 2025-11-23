@@ -1,49 +1,233 @@
-**文件说明**：调试与排错指南，帮助开发者解决常见问题。
+## 调试指南
 
-# 🐞 调试与排错指南
+### 开发环境配置
 
-## 常见报错处理
-### 1. `ReferenceError: fetch is not defined`
-- **原因**: Node.js 版本过低。
-- **解决**: 本项目依赖 Node.js 18+ 的原生 Fetch API。请升级 Node.js：
-  ```bash
-  node -v # 检查版本
-  ```
-### 2. 二维码无法生成 / 500 错误
-- **原因: 无法连接到 `sso.jxpu.edu.cn` 或 SESSION 获取失败。**
-- **调试:**
-    - 修改 `src/auth.js`，在 `generateQRCode` 函数中查看 `console.log` 输出。
-    - 系统会自动重试 3 次获取 SESSION，如果都失败，可能是学校服务器通过 IP 限制了请求，或网络不通。
+#### 启动开发模式
 
-### 3. 扫码后提示 "Cookie 无效" 或 401
-- **原因: 登录流程中的 Cookie 传递链断裂，或者学校 CAS 系统更新了 Ticket 机制。**
-- **解决:**
-    - 检查 `auth.js` 中 `loginWithStateKey` 返回的 `cookies` 是否包含 `TGC`。
-    - 检查 `fetchSchedule` 中的 SSO 重定向逻辑是否正确处理了 Location 头。
-
-## 数据库调试
-### 项目使用 SQLite3 (`schedule_server.db`)。你可以使用命令行工具查看数据状态：
-    ```bash
-    # 进入 sqlite 命令行
-    sqlite3 schedule_server.db
-
-    # 查看所有用户状态
-    sqlite> SELECT id, username, cookie_valid, last_sync FROM users;
-
-    # 查看特定 Token 的 Cookie
-    sqlite> SELECT cookies FROM users WHERE token = '你的Token';
-
-    # 退出
-    sqlite> .quit
-    ```
-
-## 日志分析
-### 项目代码中已预埋关键节点的 Log：
-- `📄 [QR]` - 二维码相关日志
-- `👤 [User]` - 用户信息日志
-- `🍪 [Cookie]` - Cookie 状态日志
-- `🗑️ [Delete]` - 删除操作日志
-### 启动时建议使用开发模式以查看详细输出：
 ```bash
 npm run dev
 ```
+
+使用 nodemon 自动监听文件变化并重启服务。
+
+#### 日志输出
+
+代码中使用 emoji 标识不同类型的日志:
+
+- 🔄 **流程日志**: 操作步骤
+- ✅ **成功日志**: 操作成功
+- ❌ **错误日志**: 操作失败
+- ⚠️  **警告日志**: 需要注意
+- 📝 **信息日志**: 一般信息
+- 🔍 **调试日志**: 调试信息
+
+### 常见调试场景
+
+#### 1. SESSION Cookie 获取失败
+
+**问题**: 生成二维码时无法获取 SESSION Cookie
+
+**调试步骤**:
+
+1. 检查 auth.js 中的重试逻辑
+2. 查看控制台输出的详细日志
+3. 验证网络连接是否正常
+
+**示例日志**:
+```
+🔄 尝试获取二维码 SESSION (第 1/3 次)
+⚠️  第 1 次未获取到 SESSION,当前 Cookies: Hm_lvt_xxx, Hm_lpvt_xxx
+🔄 尝试获取二维码 SESSION (第 2/3 次)
+✅ 成功获取 SESSION: 1A2B3C4D5E6F...
+```
+
+#### 2. 二维码过期
+
+**问题**: 扫码时提示二维码已过期
+
+**原因**: 二维码有效期为 5 分钟
+
+**解决**: 点击"重新生成二维码"
+
+#### 3. Cookie 过期
+
+**问题**: 课表同步失败,提示 Cookie 过期
+
+**解决**: 
+1. 访问首页重新扫码登录
+2. 获取新的订阅链接
+3. 更新日历应用中的订阅
+
+#### 4. 数据库查询
+
+使用 SQLite 命令行工具:
+
+```bash
+sqlite3 schedule_server.db
+
+# 查看所有表
+.tables
+
+# 查看用户表结构
+.schema users
+
+# 查询所有用户
+SELECT * FROM users;
+
+# 退出
+.quit
+```
+
+### VS Code 调试配置
+
+创建 `.vscode/launch.json`:
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "启动服务器",
+      "program": "${workspaceFolder}/src/server.js",
+      "restart": true,
+      "runtimeExecutable": "nodemon",
+      "console": "integratedTerminal"
+    }
+  ]
+}
+```
+
+按 `F5` 启动调试。
+
+---
+
+
+---
+
+## 常见问题
+
+### 1. Node.js 版本不支持 Fetch API
+
+**错误**: `ReferenceError: fetch is not defined`
+
+**原因**: Node.js 版本低于 18.0.0
+
+**解决**:
+```bash
+# 检查版本
+node --version
+
+# 升级到 Node.js 18 或更高版本
+# 使用 nvm
+nvm install 18
+nvm use 18
+```
+
+### 2. 模块找不到
+
+**错误**: `Cannot find module 'hono'`
+
+**解决**:
+```bash
+npm install
+```
+
+### 3. 端口被占用
+
+**错误**: `EADDRINUSE: address already in use :::3000`
+
+**解决**:
+
+macOS/Linux:
+```bash
+lsof -i :3000
+kill -9 <PID>
+```
+
+Windows:
+```bash
+netstat -ano | findstr :3000
+taskkill /PID <PID> /F
+```
+
+### 4. 二维码生成失败
+
+**可能原因**:
+- 网络连接问题
+- 教务系统服务器故障
+- SESSION Cookie 获取失败
+
+**解决**:
+1. 检查网络连接
+2. 刷新页面重试
+3. 系统会自动重试3次
+
+### 5. 扫码后无响应
+
+**可能原因**:
+- 网络延迟
+- 未在手机上确认登录
+
+**解决**:
+1. 等待2-3秒
+2. 确保在手机上点击"确认登录"
+
+### 6. 订阅无法更新
+
+**可能原因**: Cookie 已过期
+
+**解决**: 重新扫码登录获取新的订阅链接
+
+### 7. 课程时间不准确
+
+**可能原因**: 学期开始日期设置错误
+
+**解决**: 确认第一周周一的日期,重新生成
+
+---
+
+## 故障排查
+
+### 问题排查清单
+
+#### 服务无法启动
+
+- [ ] 检查 Node.js 版本 >= 18.0.0
+- [ ] 检查依赖是否安装 (`npm install`)
+- [ ] 检查端口 3000 是否被占用
+- [ ] 检查 `src/auth.js` 中的 COUNT_ID 是否设置
+- [ ] 查看启动日志中的错误信息
+
+#### 二维码无法生成
+
+- [ ] 检查网络连接
+- [ ] 检查教务系统是否正常访问
+- [ ] 查看控制台日志中的详细错误
+- [ ] 尝试手动访问 `https://sso.jxpu.edu.cn/cas/login`
+- [ ] 检查是否被防火墙拦截
+
+#### 扫码后无反应
+
+- [ ] 检查是否在手机上点击"确认登录"
+- [ ] 查看浏览器控制台是否有错误
+- [ ] 检查网络连接是否稳定
+- [ ] 查看服务器日志中的轮询记录
+- [ ] 尝试重新生成二维码
+
+#### Cookie 频繁过期
+
+- [ ] 检查教务系统是否有登录限制
+- [ ] 查看数据库中 Cookie 的有效期
+- [ ] 检查是否在多个设备同时登录
+- [ ] 查看服务器日志中的错误信息
+- [ ] 尝试清除浏览器缓存后重新登录
+
+#### 课表数据不完整
+
+- [ ] 检查学期开始日期是否正确
+- [ ] 查看教务系统中的课表是否完整
+- [ ] 检查解析逻辑是否有误
+- [ ] 保存 HTML 文件手动检查
+- [ ] 查看服务器日志中的解析记录

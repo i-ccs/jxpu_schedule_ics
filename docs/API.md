@@ -1,76 +1,156 @@
-**文件说明**：后端接口文档，描述了前端如何与后端交互，以及第三方应用如何调用订阅。
-
-# 📡 API 接口文档
-
-所有 API 均基于 HTTP/1.1，响应格式默认为 JSON。
-
-## 🔑 认证与扫码
+## API 文档
 
 ### 1. 生成二维码
-- **URL**: `GET /api/qr/generate`
-- **描述**: 初始化登录会话，获取二维码图片。
-- **响应**:
-  ```json
-  {
-    "success": true,
-    "qrCodeId": "1732...",
-    "imageData": "Base64字符串..."
-  }
-  ```
 
-- Cookie: 设置 session_id (HttpOnly)。
+**接口**: `GET /api/qr/generate`
+
+**响应**:
+```json
+{
+  "success": true,
+  "qrCodeId": "173226240012345",
+  "imageData": "base64_encoded_image_data"
+}
+```
+
+**说明**:
+- 生成新的会话 ID 并通过 Set-Cookie 返回
+- imageData 为 Base64 编码的 PNG 图片
 
 ### 2. 轮询二维码状态
-- **URL**: `POST /api/qr/status`
-- **Body**: `{ "qrCodeId": "..." }`
-- **描述: 检查用户是否扫码或确认。**
-- **响应:**
-  - `status: "0"` - 等待扫码
-  - `status: "2"` - 已扫码，等待确认
-  - `status: "3"` - 登录成功 (返回 `stateKey`)
-  - `status: "4"` - 用户取消
+
+**接口**: `POST /api/qr/status`
+
+**请求体**:
+```json
+{
+  "qrCodeId": "173226240012345"
+}
+```
+
+**响应** (等待中):
+```json
+{
+  "success": true,
+  "status": "0",
+  "expired": false
+}
+```
+
+**响应** (已扫码):
+```json
+{
+  "success": true,
+  "status": "2",
+  "expired": false
+}
+```
+
+**响应** (已确认):
+```json
+{
+  "success": true,
+  "status": "3",
+  "stateKey": "xxxxx",
+  "userId": "20231001",
+  "username": "张三",
+  "expired": false
+}
+```
+
+**响应** (已过期):
+```json
+{
+  "code": 1,
+  "message": "expired",
+  "success": false
+}
+```
 
 ### 3. 完成登录
-- **URL:** `POST /api/qr/login`
-- **Body:**
-  ```json
-  {
-    "qrCodeId": "...",
-    "stateKey": "...",
-    "semester_start": "2025-09-08"
-  }
-  ```
-- **描述: 使用 stateKey 换取最终的订阅 Token。**
-- **响应:**
-  ```json
-  {
-    "success": true,
-    "token": "UniqueSubscriptionToken...",
-    "existing": false // 如果是老用户更新Cookie，此字段为 true
-  }
-  ```
-## 📅 订阅与管理
-### 4. 获取 ICS 订阅
-- **URL:** `GET /schedule/:token`
-- **描述: 获取日历文件。**
-- **Content-Type:** `text/calendar`
-- **注意: 如果 Cookie 失效，将返回 401 错误，且数据库中标记该 Token 无效。**
 
-### 5. 下载 ICS 文件
-- **URL:** `GET /api/download/:token`
-- **描述: 直接触发浏览器下载 `.ics` 文件。**
+**接口**: `POST /api/qr/login`
 
-### 6. 删除账号
-- **URL:** `DELETE /api/user/:token`
-- **描述: 从数据库中彻底删除用户数据及订阅链接。**
+**请求体**:
+```json
+{
+  "qrCodeId": "173226240012345",
+  "stateKey": "xxxxx",
+  "semester_start": "2025-09-08"
+}
+```
 
-### 7. 系统统计
-- **URL:**`GET /api/stats`
-- **响应:**
-  ```json
-  {
-    "total_users": 100,
-    "active_users": 80,
-    "valid_cookies": 75
-  }
-  ```
+**响应** (新用户):
+```json
+{
+  "success": true,
+  "token": "订阅token",
+  "existing": false
+}
+```
+
+**响应** (已存在用户):
+```json
+{
+  "success": true,
+  "token": "原订阅token",
+  "existing": true,
+  "message": "检测到您已有订阅链接,Cookie 已更新"
+}
+```
+
+### 4. 会话保活
+
+**接口**: `POST /api/keepalive`
+
+**响应**:
+```json
+{
+  "success": true,
+  "message": "会话已刷新",
+  "expiresAt": 1732270800000
+}
+```
+
+### 5. 课表订阅
+
+**接口**: `GET /schedule/:token`
+
+**响应**: ICS 格式的日历文件
+
+**Headers**:
+```
+Content-Type: text/calendar; charset=utf-8
+Content-Disposition: attachment; filename=schedule.ics
+```
+
+### 6. 下载课表
+
+**接口**: `GET /api/download/:token`
+
+**响应**: ICS 文件下载
+
+### 7. 删除账号
+
+**接口**: `DELETE /api/user/:token`
+
+**响应**:
+```json
+{
+  "success": true,
+  "message": "账号已删除,订阅链接已失效"
+}
+```
+
+### 8. 统计接口
+
+**接口**: `GET /api/stats`
+
+**响应**:
+```json
+{
+  "total_users": 100,
+  "active_users": 80,
+  "valid_cookies": 75
+}
+```
