@@ -1,108 +1,446 @@
-🏗️ 项目架构
+# 项目结构文档
 
-## 本项目采用模块化设计，业务逻辑、路由控制与数据存储分离。
+详细的项目架构和文件说明
+
+---
+
+## 目录
+
+1. [文件结构](#文件结构)
+2. [核心模块说明](#核心模块说明)
+3. [数据库设计](#数据库设计)
+4. [技术架构](#技术架构)
+5. [数据流程](#数据流程)
+6. [缓存机制](#缓存机制)
+
+---
 
 ## 文件结构
 
 ```
 schedule-subscription/
-├── 📁 src/                        # 源代码目录
-│   ├── 📄 server.js              # Hono 主服务器
-│   ├── 📄 auth.js                # 认证模块
-│   ├── 📄 db.js                  # 数据库操作
-│   ├── 📄 parser.js              # 课表解析
-│   ├── 📄 icaal.js               # ICS 生成
+├── 📁 src/                          # 源代码目录
+│   ├── 📄 server.js                # Hono 主服务器
+│   ├── 📄 config.js                # 配置加载模块
+│   ├── 📄 auth.js                  # 认证模块
+│   ├── 📄 db.js                    # 数据库操作
+│   ├── 📄 parser.js                # 课表解析
+│   ├── 📄 ical.js                  # ICS 生成
+│   ├── 📄 cache-manager.js         # 缓存管理
 │   └── 📁 routers/
-│       └── 📄 router.js          # 路由配置
+│       └── 📄 router.js            # 路由配置
 │
-├── 📁 public/                     # 静态文件
-│   └── 📄 login.html             # 登录页面
+├── 📁 public/                       # 静态文件
+│   └── 📄 login.html               # 登录页面
 │
-├── 📁 docs/                       # 文档目录
-│   ├── 📄 README.md              # 项目说明
-│   ├── 📄 DEBUG.md               # 调试指南
-│   ├── 📄 STRUCTURE.md           # 文件结构
-│   └── 📄 QUICKSTART.md          # 快速开始
+├── 📁 docs/                         # 文档目录
+│   ├── 📄 README.md                # 项目说明
+│   ├── 📄 API.md                   # API 文档
+│   ├── 📄 DEBUG.md                 # 调试指南
+│   ├── 📄 STRUCTURE.md             # 项目结构
+│   └── 📄 QUICKSTART.md            # 快速开始
 │
-├── 📄 package.json               # 项目配置
-├── 📄 package-lock.json          # 依赖锁定
-├── 📊 schedule_server.db         # SQLite 数据库(自动生成)
-└── 📁 node_modules/              # 依赖包(自动生成)
+├── 📁 cache/                        # 缓存目录(自动生成)
+│   ├── 📄 cache-index.json         # 缓存索引
+│   └── 📄 *.ics                    # 缓存的 ICS 文件
+│
+├── 📄 .env.example                 # 环境变量模板
+├── 📄 .env                         # 环境变量配置(需创建)
+├── 📄 package.json                 # 项目配置
+├── 📄 package-lock.json            # 依赖锁定
+├── 📊 schedule_server.db           # SQLite 数据库(自动生成)
+├── 📄 .gitignore                   # Git 忽略文件
+└── 📁 node_modules/                # 依赖包(自动生成)
 ```
 
-### 核心模块说明
+---
 
-#### server.js
-- Hono 应用初始化
-- 路由挂载
-- 数据库初始化
-- 服务启动
+## 核心模块说明
 
-#### auth.js
-- 二维码生成
-- 状态轮询
-- Cookie 管理
-- 登录验证
-- 课表获取
+### 1. server.js
 
-#### router.js
-- API 路由定义
-- 会话管理
-- 请求处理
-- 响应格式化
+**功能**: Hono 应用主服务器
 
-#### db.js
-- 数据库操作
-- 用户管理
-- Cookie 状态管理
+**职责**:
+- 初始化 Hono 应用
+- 挂载路由
+- 初始化数据库
+- 初始化缓存目录
+- 启动定时任务
+- 启动 HTTP 服务器
 
-#### parser.js
-- HTML 解析
-- 课程提取
-- 时间计算
+**关键代码**:
 
-#### ical.js
-- ICS 文件生成
-- 事件创建
-- 提醒添加
+```javascript
+const app = new Hono();
+app.route('/', router);
+
+// 启动服务
+await db.initDB();
+await cacheManager.initCacheDir();
+cacheManager.startScheduledUpdate();
+
+serve({ fetch: app.fetch, port: 3000 });
+```
+
+---
+
+### 2. config.js
+
+**功能**: 配置加载和管理
+
+**职责**:
+- 加载 .env 文件
+- 提供配置对象
+- 验证配置有效性
+- 显示配置信息
+
+**配置项**:
+
+| 配置项 | 默认值 | 说明 |
+|--------|--------|------|
+| PORT | 3000 | 服务器端口 |
+| NODE_ENV | development | 运行环境 |
+| ADMIN_PASSWORD | admin123 | 管理员密码 |
+| DB_PATH | schedule_server.db | 数据库路径 |
+| CACHE_DIR | cache | 缓存目录 |
+| UPDATE_HOURS | [5,13,21] | 更新时间点 |
+
+**使用方式**:
+
+```javascript
+const { config } = require('./config');
+console.log('端口:', config.port);
+```
+
+---
+
+### 3. auth.js
+
+**功能**: 认证和课表获取
+
+**主要函数**:
+
+#### `generateQRCode()`
+生成登录二维码并获取 SESSION Cookie
+
+**流程**:
+1. 生成跟踪 Cookie
+2. 访问登录页面
+3. 请求二维码图片(最多重试3次)
+4. 返回二维码和 Cookie
+
+**返回值**:
+```javascript
+{
+  success: true,
+  qrCodeId: "173226240012345",
+  imageBuffer: Buffer,
+  cookies: { SESSION: "xxx", ... }
+}
+```
+
+#### `pollQRCodeStatus(qrCodeId, cookies)`
+轮询二维码扫码状态
+
+**参数**:
+- `qrCodeId`: 二维码ID
+- `cookies`: 包含 SESSION 的 Cookie 对象
+
+**返回值**:
+```javascript
+{
+  success: true,
+  status: "3",  // 0=等待, 2=已扫码, 3=已确认
+  stateKey: "xxx",
+  userId: "20231001",
+  username: "张三"
+}
+```
+
+#### `loginWithStateKey(stateKey, fpVisitorId, sessionCookies)`
+使用 stateKey 完成登录
+
+**返回值**:
+```javascript
+{
+  success: true,
+  cookies: { TGC: "xxx", ... }
+}
+```
+
+#### `fetchSchedule(cookies)`
+获取课表 HTML
+
+**流程**:
+1. SSO 登录验证
+2. 访问教务系统
+3. 获取课表页面
+4. 验证响应有效性
+
+**返回值**:
+```javascript
+{
+  success: true,
+  html: "<html>...</html>"
+}
+```
+
+---
+
+### 4. db.js
+
+**功能**: 数据库操作
+
+**主要函数**:
+
+| 函数 | 功能 |
+|------|------|
+| `initDB()` | 初始化数据库 |
+| `saveUser()` | 保存用户信息 |
+| `getUser()` | 获取用户信息 |
+| `deleteUser()` | 删除用户 |
+| `findUserByUserId()` | 根据用户ID查找 |
+| `findUserByUsername()` | 根据用户名查找 |
+| `updateLastSync()` | 更新同步时间 |
+| `markCookieInvalid()` | 标记Cookie无效 |
+
+**使用示例**:
+
+```javascript
+// 保存用户
+await db.saveUser(token, cookies, semesterStart, userId, username);
+
+// 获取用户
+const user = await db.getUser(token);
+
+// 检查Cookie有效性
+if (!user.cookieValid) {
+    await db.markCookieInvalid(token);
+}
+```
+
+---
+
+### 5. parser.js
+
+**功能**: 课表 HTML 解析
+
+**主要函数**:
+
+#### `parseSchedule(html, semesterStart)`
+解析课表 HTML,提取课程信息
+
+**流程**:
+1. 使用 Cheerio 加载 HTML
+2. 遍历课表单元格
+3. 解析课程信息
+4. 计算时间
+5. 生成课程数组
+
+**课程对象**:
+```javascript
+{
+  name: "高等数学",
+  location: "教学楼A101",
+  teacher: "张老师",
+  week: 1,
+  startTime: Date,
+  endTime: Date
+}
+```
+
+#### `cleanCourseName(rawName)`
+清理课程名称
+
+**处理逻辑**:
+1. 移除 HTML 标签
+2. 解码 HTML 实体
+3. 去除空白字符
+4. 规范化格式
+
+**节次时间映射**:
+
+```javascript
+const lessonTimes = {
+    1: ['08:20', '10:00'],  // 第1-2节
+    2: ['10:20', '12:00'],  // 第3-4节
+    3: ['14:00', '15:40'],  // 第5-6节
+    4: ['16:00', '17:35'],  // 第7-8节
+    5: ['17:40', '19:20'],  // 第9-10节
+    6: ['19:30', '21:10']   // 第11-12节
+};
+```
+
+---
+
+### 6. ical.js
+
+**功能**: ICS 日历文件生成
+
+**主要函数**:
+
+#### `generateICS(courses)`
+生成 ICS 格式的日历文件
+
+**配置**:
+- 日历名称: "我的课程表"
+- 时区: Asia/Shanghai
+- 刷新间隔: 1小时
+- 提醒时间: 上课前35分钟
+
+**事件属性**:
+```javascript
+{
+  start: course.startTime,
+  end: course.endTime,
+  summary: course.name,
+  description: `教师: ${course.teacher}\n第${course.week}周`,
+  location: course.location,
+  uid: "unique-id@jxpu.edu.cn",
+  alarms: [{ type: 'display', trigger: 35 * 60 }]
+}
+```
+
+---
+
+### 7. cache-manager.js
+
+**功能**: 缓存管理和定时更新
+
+**主要函数**:
+
+#### `getCachedSchedule(token)`
+获取缓存的课表(如果过期则重新生成)
+
+**缓存策略**:
+- 缓存有效期: 到下次更新时间
+- 更新时间: 每天 5:00、13:00、21:00
+- 过期处理: 自动重新生成
+
+#### `generateAndCacheSchedule(token)`
+生成并缓存课表
+
+**流程**:
+1. 获取用户信息
+2. 验证 Cookie
+3. 获取课表数据
+4. 解析课程
+5. 生成 ICS
+6. 保存到文件
+7. 更新索引
+
+#### `startScheduledUpdate()`
+启动定时更新任务
+
+**更新机制**:
+1. 计算距离下次更新的时间
+2. 使用 setTimeout 设置定时器
+3. 到时间后更新所有缓存
+4. 递归调用,设置下一次更新
+
+#### `clearUserCache(token)`
+清理指定用户的缓存
+
+**操作**:
+1. 删除缓存文件
+2. 更新缓存索引
+3. 记录日志
+
+---
+
+### 8. router.js
+
+**功能**: API 路由定义和处理
+
+**路由列表**:
+
+| 路由 | 方法 | 功能 |
+|------|------|------|
+| /api/qr/generate | GET | 生成二维码 |
+| /api/qr/status | POST | 轮询状态 |
+| /api/qr/login | POST | 完成登录 |
+| /api/keepalive | POST | 会话保活 |
+| /schedule/:token | GET | 课表订阅 |
+| /api/download/:token | GET | 下载课表 |
+| /api/user/:token | DELETE | 删除账号 |
+| /api/cache/refresh/:token | POST | 刷新缓存 |
+| /api/cache/stats | GET | 缓存统计 |
+| /api/cache/clear | POST | 清理缓存 |
+| /api/stats | GET | 系统统计 |
+| /login | GET | 登录页面 |
+
+**会话管理**:
+
+```javascript
+// 会话存储
+const sessionStorage = new Map();
+
+// 保存会话
+saveSession(sessionId, {
+    cookies: {...},
+    qrCodeId: "xxx",
+    timestamp: Date.now()
+});
+
+// 自动清理(每10分钟)
+setInterval(() => {
+    const twoHours = 2 * 60 * 60 * 1000;
+    for (const [id, session] of sessionStorage.entries()) {
+        if (Date.now() - session.timestamp > twoHours) {
+            sessionStorage.delete(id);
+        }
+    }
+}, 10 * 60 * 1000);
+```
 
 ---
 
 ## 数据库设计
 
-### users 表结构
+### users 表
+
+**表结构**:
 
 ```sql
 CREATE TABLE users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    token TEXT UNIQUE NOT NULL,           -- 订阅 Token
-    cookies TEXT NOT NULL,                -- Cookie JSON 字符串
-    semester_start TEXT NOT NULL,         -- 学期开始日期
-    user_id TEXT,                         -- 用户 ID
-    username TEXT,                        -- 用户名
+    token TEXT UNIQUE NOT NULL,
+    cookies TEXT NOT NULL,
+    semester_start TEXT NOT NULL,
+    user_id TEXT,
+    username TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    last_sync TIMESTAMP,                  -- 最后同步时间
-    cookie_valid INTEGER DEFAULT 1,       -- Cookie 有效性
-    cookie_expired_at TIMESTAMP           -- 过期时间
+    last_sync TIMESTAMP,
+    cookie_valid INTEGER DEFAULT 1,
+    cookie_expired_at TIMESTAMP
 );
 ```
 
-### 字段说明
+**字段说明**:
 
-| 字段 | 类型 | 说明 |
-|-----|------|------|
-| `id` | INTEGER | 主键,自增 |
-| `token` | TEXT | 订阅链接的唯一标识 |
-| `cookies` | TEXT | JSON 格式的 Cookie 数据 |
-| `semester_start` | TEXT | 学期开始日期(YYYY-MM-DD) |
-| `user_id` | TEXT | 教务系统用户ID |
-| `username` | TEXT | 用户姓名 |
-| `created_at` | TIMESTAMP | 创建时间 |
-| `last_sync` | TIMESTAMP | 最后同步时间 |
-| `cookie_valid` | INTEGER | Cookie 是否有效(1=有效, 0=无效) |
-| `cookie_expired_at` | TIMESTAMP | Cookie 过期时间 |
+| 字段 | 类型 | 说明 | 示例 |
+|------|------|------|------|
+| id | INTEGER | 主键,自增 | 1 |
+| token | TEXT | 订阅Token(唯一) | AbCdEf... |
+| cookies | TEXT | Cookie JSON | {"TGC":"xxx"} |
+| semester_start | TEXT | 学期开始日期 | 2025-09-08 |
+| user_id | TEXT | 用户ID | 20231001 |
+| username | TEXT | 用户名 | 张三 |
+| created_at | TIMESTAMP | 创建时间 | 2024-11-22 |
+| last_sync | TIMESTAMP | 最后同步时间 | 2024-11-22 |
+| cookie_valid | INTEGER | Cookie有效性 | 1=有效, 0=无效 |
+| cookie_expired_at | TIMESTAMP | 过期时间 | 2024-11-22 |
 
-### 查询示例
+**索引优化**:
+
+```sql
+CREATE INDEX idx_token ON users(token);
+CREATE INDEX idx_user_id ON users(user_id);
+CREATE INDEX idx_cookie_valid ON users(cookie_valid);
+```
+
+**常用查询**:
 
 ```sql
 -- 查询所有有效用户
@@ -115,30 +453,39 @@ SELECT * FROM users WHERE token = 'xxx';
 UPDATE users SET last_sync = CURRENT_TIMESTAMP WHERE token = 'xxx';
 
 -- 标记 Cookie 无效
-UPDATE users SET cookie_valid = 0, cookie_expired_at = CURRENT_TIMESTAMP 
+UPDATE users 
+SET cookie_valid = 0, cookie_expired_at = CURRENT_TIMESTAMP 
 WHERE token = 'xxx';
+
+-- 统计信息
+SELECT 
+    COUNT(*) as total_users,
+    SUM(CASE WHEN cookie_valid = 1 THEN 1 ELSE 0 END) as valid_users,
+    SUM(CASE WHEN last_sync IS NOT NULL THEN 1 ELSE 0 END) as active_users
+FROM users;
 ```
+
+---
 
 ## 技术架构
 
 ### 技术栈
 
 | 类型 | 技术 | 版本 | 说明 |
-|-----|------|------|------|
-| **Web 框架** | Hono | ^4.0.0 | 轻量级、高性能 Web 框架 |
-| **Node.js 适配器** | @hono/node-server | ^1.8.0 | Hono 的 Node.js 运行时 |
-| **HTTP 请求** | Fetch API | 内置 | Node.js 18+ 原生支持 |
-| **HTML 解析** | Cheerio | ^1.0.0-rc.12 | 服务端 jQuery 实现 |
-| **日历生成** | ical-generator | ^4.1.0 | ICS 格式日历生成 |
-| **数据库** | SQLite3 | ^5.1.6 | 轻量级嵌入式数据库 |
-| **开发工具** | nodemon | ^3.0.2 | 开发时自动重启 |
+|------|------|------|------|
+| **Web 框架** | Hono | ^4.0.0 | 轻量级、高性能 |
+| **Node.js 适配器** | @hono/node-server | ^1.8.0 | Hono Node.js 运行时 |
+| **HTTP 请求** | Fetch API | 内置 | Node.js 18+ 原生 |
+| **HTML 解析** | Cheerio | ^1.0.0 | 服务端 jQuery |
+| **日历生成** | ical-generator | ^4.1.0 | ICS 生成 |
+| **数据库** | SQLite3 | ^5.1.6 | 嵌入式数据库 |
+| **开发工具** | nodemon | ^3.0.2 | 自动重启 |
 
 ### 系统架构图
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                      前端页面                            │
-│                   (login.html)                          │
+│                    前端页面 (login.html)                 │
 │  - 二维码生成与显示                                      │
 │  - 状态轮询                                              │
 │  - 会话保活                                              │
@@ -148,14 +495,13 @@ WHERE token = 'xxx';
                   │ HTTP/HTTPS
                   ↓
 ┌─────────────────────────────────────────────────────────┐
-│                  Hono Web 服务器                         │
-│                   (server.js)                           │
+│              Hono Web 服务器 (server.js)                │
 └─────────────────┬───────────────────────────────────────┘
                   │
                   │ 路由分发
                   ↓
 ┌─────────────────────────────────────────────────────────┐
-│                   路由层 (router.js)                     │
+│                 路由层 (router.js)                       │
 ├─────────────────────────────────────────────────────────┤
 │  /api/qr/generate      - 生成二维码                     │
 │  /api/qr/status        - 轮询状态                       │
@@ -164,21 +510,22 @@ WHERE token = 'xxx';
 │  /schedule/:token      - 课表订阅                       │
 │  /api/download/:token  - 下载ICS                        │
 │  /api/user/:token      - 删除账号                       │
+│  /api/cache/*          - 缓存管理                       │
 └─────────────────┬───────────────────────────────────────┘
                   │
-         ┌────────┴────────┬────────────┬────────────┐
-         ↓                 ↓            ↓            ↓
-┌──────────────┐  ┌──────────────┐  ┌─────────┐  ┌─────────┐
-│  认证模块     │  │  解析模块     │  │ ICS模块 │  │ DB模块  │
-│ (auth.js)    │  │(parser.js)   │  │(ical.js)│  │(db.js)  │
-├──────────────┤  ├──────────────┤  ├─────────┤  ├─────────┤
-│- 生成二维码   │  │- 解析HTML    │  │- 生成ICS│  │- 用户管理│
-│- 轮询状态     │  │- 提取课程    │  │- 添加提醒│  │- Cookie │
-│- 登录验证     │  │- 计算时间    │  │         │  │  管理   │
-│- 获取课表     │  │              │  │         │  │         │
-└──────────────┘  └──────────────┘  └─────────┘  └─────────┘
-         │                 │                           │
-         └─────────────────┴───────────────────────────┘
+         ┌────────┴────────┬──────────┬──────────┬────────┐
+         ↓                 ↓          ↓          ↓        ↓
+    ┌─────────┐   ┌──────────┐  ┌────────┐  ┌─────┐  ┌──────┐
+    │认证模块 │   │解析模块  │  │ICS模块 │  │DB   │  │缓存  │
+    │auth.js  │   │parser.js │  │ical.js │  │db.js│  │cache │
+    ├─────────┤   ├──────────┤  ├────────┤  ├─────┤  ├──────┤
+    │二维码   │   │HTML解析  │  │生成ICS │  │用户 │  │定时  │
+    │轮询     │   │课程提取  │  │添加提醒│  │管理 │  │更新  │
+    │登录     │   │时间计算  │  │        │  │     │  │      │
+    │获取课表 │   │          │  │        │  │     │  │      │
+    └─────────┘   └──────────┘  └────────┘  └─────┘  └──────┘
+         │                 │          │          │        │
+         └─────────────────┴──────────┴──────────┴────────┘
                            │
                            ↓
                   ┌──────────────────┐
@@ -187,11 +534,137 @@ WHERE token = 'xxx';
                   └──────────────────┘
 ```
 
-### 数据流程
+---
 
-1. **二维码生成**: 前端 → 后端生成二维码 → 创建会话 → 返回二维码图片
-2. **状态轮询**: 前端轮询 → 后端检查状态 → 返回扫码状态
-3. **完成登录**: 确认登录 → 获取 TGC → 验证 Cookie → 保存数据库
-4. **课表同步**: 日历应用请求 → 验证 token → 获取课表 → 生成 ICS
+## 数据流程
 
+### 1. 登录流程
 
+```
+用户 → 生成二维码 → 手机扫码 → 确认登录 → 获取课表 → 生成订阅
+  │         │            │          │          │           │
+  │    创建会话      轮询状态   获取TGC    验证Cookie   保存数据库
+  │    SESSION       status=2    TGC       fetchSchedule  saveUser
+  │                  status=3    Cookie    解析课表        token
+  └──────────────────────────────────────────────────────────┘
+                           返回订阅链接
+```
+
+### 2. 课表同步流程
+
+```
+日历应用 → 请求订阅 → 检查缓存 → 生成/读取 → 返回ICS
+   │          │          │           │           │
+   │     验证token   cache存在?   fetchSchedule  设置缓存头
+   │     getUser    是→读缓存    parseSchedule   CDN缓存
+   │               否→生成新     generateICS     浏览器缓存
+   └──────────────────────────────────────────────────┘
+                      自动更新课程
+```
+
+### 3. 缓存更新流程
+
+```
+定时任务 → 遍历用户 → 获取课表 → 生成ICS → 保存缓存
+   │          │          │          │          │
+5/13/21点  获取token  fetchSchedule generateICS writeFile
+   │       for循环    验证Cookie   解析课程    更新索引
+   │       间隔1秒    失败→标记   计算时间    记录日志
+   └──────────────────────────────────────────────┘
+                   下次定时更新
+```
+
+---
+
+## 缓存机制
+
+### 缓存文件结构
+
+```
+cache/
+├── cache-index.json          # 缓存索引文件
+├── a1b2c3d4e5f6.ics         # 用户1的课表缓存
+├── f6e5d4c3b2a1.ics         # 用户2的课表缓存
+└── ...
+```
+
+### 缓存索引格式
+
+```json
+{
+  "token1": {
+    "lastUpdate": 1732262400000,
+    "nextUpdate": 1732270800000,
+    "courses": 15,
+    "username": "张三"
+  },
+  "token2": {
+    "lastUpdate": 1732262400000,
+    "nextUpdate": 1732270800000,
+    "courses": 18,
+    "username": "李四"
+  }
+}
+```
+
+### 缓存策略
+
+**更新时间**:
+- 每天 5:00、13:00、21:00 自动更新
+- 可通过环境变量 `UPDATE_HOURS` 配置
+
+**有效期判断**:
+```javascript
+function isCacheExpired(lastUpdate) {
+    const now = Date.now();
+    const nextUpdate = getNextUpdateTime();
+    const offset = (now - nextUpdate) % (24 * 60 * 60 * 1000);
+    return lastUpdate < (now - offset);
+}
+```
+
+**CDN 缓存头**:
+```javascript
+Cache-Control: public, max-age=3600, s-maxage=43200
+ETag: "1732262400000"
+Last-Modified: Fri, 22 Nov 2024 13:00:00 GMT
+X-Cache-Status: HIT
+X-Next-Update: 2024-11-22T21:00:00.000Z
+```
+
+### 缓存清理
+
+**手动清理**:
+```bash
+curl -X POST http://localhost:3000/api/cache/clear \
+  -H "Content-Type: application/json" \
+  -d '{"password":"admin_password"}'
+```
+
+**自动清理**:
+- 用户删除账号时自动清理对应缓存
+- Cookie 过期时不清理缓存(保留历史数据)
+
+---
+
+## 模块依赖关系
+
+```
+server.js
+  ├── config.js
+  ├── db.js
+  ├── cache-manager.js
+  │   ├── auth.js
+  │   ├── parser.js
+  │   ├── ical.js
+  │   └── db.js
+  └── routers/router.js
+      ├── auth.js
+      ├── db.js
+      ├── cache-manager.js
+      └── config.js
+```
+
+---
+
+**📖 深入了解项目结构有助于更好地开发和维护!**

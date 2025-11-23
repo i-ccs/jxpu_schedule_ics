@@ -1,11 +1,13 @@
 {
   "name": "schedule-subscription-service",
-  "version": "0.2",
-  "description": "课表订阅服务 - 江西职业技术大学 (Hono + Fetch API)",
+  "version": "0.2.1",
+  "description": "课表订阅服务 - 江西职业技术大学 (Hono + Fetch API + CDN Cache)",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
+    "dev": "nodemon src/server.js",
+    "cache:clear": "node -e \"require('./src/cache-manager').clearAllCache()\"",
+    "cache:stats": "curl http://localhost:3000/api/cache/stats"
   },
   "keywords": [
     "schedule",
@@ -13,7 +15,10 @@
     "ics",
     "subscription",
     "hono",
-    "fetch"
+    "fetch",
+    "cdn",
+    "cache",
+    "cloudflare"
   ],
   "author": "",
   "license": "MIT",

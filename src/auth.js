@@ -122,7 +122,6 @@ async function generateQRCode() {
         Object.assign(cookieJar, generateTrackingCookies());
         
         // 2. 访问登录页面获取初始 Cookie
-        console.log('📄 访问登录页面...');
         const loginPageResponse = await fetch(`${CAS_URL}/login`, {
             method: 'GET',
             headers: {
@@ -137,7 +136,6 @@ async function generateQRCode() {
         // 解析登录页面返回的 Cookie
         const loginCookies = parseCookiesFromHeaders(getSetCookieHeaders(loginPageResponse));
         Object.assign(cookieJar, loginCookies);
-        console.log(`📝 初始 Cookies: ${Object.keys(cookieJar).join(', ')}`);
         
         // 3. 请求二维码图片并获取 SESSION Cookie（最多重试3次）
         const qrCodeId = generateQrCodeId();
@@ -176,7 +174,6 @@ async function generateQRCode() {
                 // 检查是否获取到 SESSION
                 if (cookieJar.SESSION) {
                     sessionCookie = cookieJar.SESSION;
-                    console.log(`✅ 成功获取 SESSION: ${sessionCookie.substring(0, 16)}...`);
                     break;
                 }
                 
@@ -314,9 +311,7 @@ async function loginWithStateKey(stateKey, fpVisitorId, sessionCookies) {
             fpVisitorId: fpVisitorId,
             trustAgent: ''
         });
-        
-        console.log('🔐 使用 stateKey 登录，携带 SESSION:', sessionCookies.SESSION.substring(0, 16) + '...');
-        
+                
         const response = await fetch(loginUrl, {
             method: 'POST',
             headers: {
@@ -337,7 +332,6 @@ async function loginWithStateKey(stateKey, fpVisitorId, sessionCookies) {
         const cookies = parseCookiesFromHeaders(getSetCookieHeaders(response));
         
         if (cookies.TGC) {
-            console.log('✅ 成功获取 TGC:', cookies.TGC.substring(0, 16) + '...');
             return {
                 success: true,
                 cookies: cookies
