@@ -1,16 +1,16 @@
-// ============= router.js - Hono 路由 (支持 CDN 缓存) =============
+// ============= router.js - Hono 路由 (添加邮箱管理和保活接口) =============
 const { Hono } = require('hono');
 const crypto = require('crypto');
 const { setCookie } = require('hono/cookie');
 
-// 🆕 引入配置
 const { config } = require('../config');
-
 const auth = require('../auth');
 const parser = require('../parser');
 const icalGenerator = require('../ical');
 const db = require('../db');
-const cacheManager = require('../cache-manager'); // 🆕 缓存管理器
+const cacheManager = require('../cache-manager');
+const keepalive = require('../keepalive'); // 🆕 Cookie保活模块
+const mailer = require('../mailer'); // 🆕 邮件模块
 
 const router = new Hono();
 
@@ -104,6 +104,169 @@ router.get('/api/qr/generate', async (c) => {
 });
 
 /**
+ * 🆕 更新用户邮箱
+ */
+router.post('/api/user/:token/email', async (c) => {
+    const { token } = c.req.param();
+    
+    try {
+        const { email } = await c.req.json();
+        
+        if (!email) {
+            return c.json({ 
+                success: false, 
+                error: '邮箱不能为空' 
+            }, 400);
+        }
+        
+        // 简单的邮箱格式验证
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            return c.json({ 
+                success: false, 
+                error: '邮箱格式不正确' 
+            }, 400);
+        }
+        
+        const user = await db.getUser(token);
+        
+        if (!user) {
+            return c.json({ 
+                success: false, 
+                error: '用户不存在' 
+            }, 404);
+        }
+        
+        console.log(`📧 更新邮箱: ${user.username || user.userId} -> ${email}`);
+        
+        await db.updateUserEmail(token, email);
+        
+        // 🆕 发送测试邮件（可选）
+        if (config.smtp.user) {
+            await mailer.sendTestEmail(email);
+        }
+        
+        return c.json({ 
+            success: true,
+            message: '邮箱已更新',
+            email
+        });
+        
+    } catch (error) {
+        console.error('更新邮箱失败:', error);
+        return c.json({ 
+            success: false, 
+            error: error.message 
+        }, 500);
+    }
+});
+
+/**
+ * 🆕 获取用户信息（包含邮箱）
+ */
+router.get('/api/user/:token/info', async (c) => {
+    const { token } = c.req.param();
+    
+    try {
+        const user = await db.getUser(token);
+        
+        if (!user) {
+            return c.json({ 
+                success: false, 
+                error: '用户不存在' 
+            }, 404);
+        }
+        
+        return c.json({
+            success: true,
+            user: {
+                userId: user.userId,
+                username: user.username,
+                email: user.email,
+                cookieValid: user.cookieValid === 1,
+                lastKeepalive: user.lastKeepalive,
+                semesterStart: user.semesterStart
+            }
+        });
+        
+    } catch (error) {
+        console.error('获取用户信息失败:', error);
+        return c.json({ 
+            success: false, 
+            error: error.message 
+        }, 500);
+    }
+});
+
+/**
+ * 🆕 手动触发单个用户Cookie保活
+ */
+router.post('/api/user/:token/keepalive', async (c) => {
+    const { token } = c.req.param();
+    
+    try {
+        console.log(`🔄 手动触发保活: ${token.substring(0, 16)}...`);
+        
+        const result = await keepalive.checkAndKeepaliveUser(token);
+        
+        if (result.success) {
+            return c.json({
+                success: true,
+                message: 'Cookie保活成功',
+                username: result.username,
+                email: result.email
+            });
+        } else {
+            return c.json({
+                success: false,
+                error: result.error,
+                username: result.username,
+                email: result.email
+            }, 400);
+        }
+        
+    } catch (error) {
+        console.error('手动保活失败:', error);
+        return c.json({ 
+            success: false, 
+            error: error.message 
+        }, 500);
+    }
+});
+
+/**
+ * 🆕 批量触发所有用户Cookie保活（需要管理员密码）
+ */
+router.post('/api/keepalive/check-all', async (c) => {
+    try {
+        const { password } = await c.req.json();
+        
+        if (password !== config.adminPassword) {
+            return c.json({ 
+                success: false, 
+                error: '密码错误' 
+            }, 403);
+        }
+        
+        console.log('🔄 管理员触发批量保活检查...');
+        
+        const result = await keepalive.checkAllUsersCookies();
+        
+        return c.json({
+            success: true,
+            ...result
+        });
+        
+    } catch (error) {
+        console.error('批量保活失败:', error);
+        return c.json({ 
+            success: false, 
+            error: error.message 
+        }, 500);
+    }
+});
+
+/**
  * 删除用户账号和订阅（同时清理缓存）
  */
 router.delete('/api/user/:token', async (c) => {
@@ -121,10 +284,7 @@ router.delete('/api/user/:token', async (c) => {
         
         console.log(`🗑️  删除用户: ${user.username || user.userId || 'Unknown'} (token: ${token.substring(0, 16)}...)`);
         
-        // 🆕 清理缓存
         await cacheManager.clearUserCache(token);
-        
-        // 从数据库中删除用户
         await db.deleteUser(token);
         
         console.log('✅ 用户已删除');
@@ -184,7 +344,7 @@ router.post('/api/keepalive', async (c) => {
 });
 
 /**
- * 🆕 直接下载课表 ICS 文件（使用缓存）
+ * 直接下载课表 ICS 文件（使用缓存）
  */
 router.get('/api/download/:token', async (c) => {
     const { token } = c.req.param();
@@ -202,7 +362,6 @@ router.get('/api/download/:token', async (c) => {
         
         console.log(`📥 下载课表: ${token.substring(0, 16)}...`);
         
-        // 🆕 使用缓存管理器获取课表
         const result = await cacheManager.getCachedSchedule(token);
         
         if (!result.success) {
@@ -214,7 +373,6 @@ router.get('/api/download/:token', async (c) => {
         
         console.log(`✅ ${result.fromCache ? '使用缓存' : '重新生成'}`);
         
-        // 设置下载响应头
         c.header('Content-Type', 'text/calendar; charset=utf-8');
         c.header('Content-Disposition', 'attachment; filename=my-schedule.ics');
         
@@ -288,11 +446,11 @@ router.post('/api/qr/status', async (c) => {
 });
 
 /**
- * 完成登录
+ * 完成登录（🆕 支持邮箱输入）
  */
 router.post('/api/qr/login', async (c) => {
     try {
-        const { qrCodeId, stateKey, semester_start = '2025-09-08' } = await c.req.json();
+        const { qrCodeId, stateKey, semester_start = '2025-09-08', email = null } = await c.req.json();
         
         if (!qrCodeId || !stateKey) {
             return c.json({ 
@@ -323,7 +481,7 @@ router.post('/api/qr/login', async (c) => {
         const userId = session.userId;
         const username = session.username;
         
-        console.log(`👤 用户信息: ID=${userId || 'N/A'}, 用户名=${username || 'N/A'}`);
+        console.log(`👤 用户信息: ID=${userId || 'N/A'}, 用户名=${username || 'N/A'}, 邮箱=${email || 'N/A'}`);
         
         let existingUser = null;
         
@@ -349,11 +507,11 @@ router.post('/api/qr/login', async (c) => {
                     loginResult.cookies, 
                     existingUser.semester_start || semester_start,
                     userId,
-                    username
+                    username,
+                    email // 🆕 更新邮箱
                 );
                 console.log('✅ Cookie 已更新为最新状态');
                 
-                // 🆕 清理旧缓存，强制下次生成新缓存
                 await cacheManager.clearUserCache(existingUser.token);
             }
             
@@ -395,9 +553,8 @@ router.post('/api/qr/login', async (c) => {
         
         console.log('💾 保存用户信息...');
         
-        await db.saveUser(token, loginResult.cookies, semester_start, userId, username);
+        await db.saveUser(token, loginResult.cookies, semester_start, userId, username, email); // 🆕 保存邮箱
         
-        // 🆕 立即生成初始缓存
         console.log('📦 生成初始缓存...');
         await cacheManager.generateAndCacheSchedule(token);
         
@@ -421,7 +578,7 @@ router.post('/api/qr/login', async (c) => {
 });
 
 /**
- * 🆕 课表订阅路由（ICS格式，支持 CDN 缓存）
+ * 课表订阅路由（ICS格式，支持 CDN 缓存）
  */
 router.get('/schedule/:token', async (c) => {
     const { token } = c.req.param();
@@ -439,7 +596,6 @@ router.get('/schedule/:token', async (c) => {
         
         console.log(`📅 获取课表: ${token.substring(0, 16)}... (用户: ${user.username || user.userId || 'Unknown'})`);
         
-        // 🆕 使用缓存管理器获取课表
         const result = await cacheManager.getCachedSchedule(token);
         
         if (!result.success) {
@@ -451,29 +607,20 @@ router.get('/schedule/:token', async (c) => {
         
         console.log(`✅ ${result.fromCache ? '使用缓存' : '重新生成'}`);
         
-        // 🆕 设置 Cloudflare CDN 缓存头
         c.header('Content-Type', 'text/calendar; charset=utf-8');
         c.header('Content-Disposition', 'attachment; filename=schedule.ics');
         
-        // Cloudflare CDN 缓存配置
         const cacheControl = [
-            'public',                          // 允许 CDN 缓存
-            'max-age=3600',                    // 浏览器缓存1小时
-            's-maxage=43200',                  // CDN 缓存12小时
-            'stale-while-revalidate=86400',    // 允许返回过期内容同时后台更新
-            'stale-if-error=259200'            // 如果源站错误，使用3天内的旧缓存
+            'public',
+            'max-age=3600',
+            's-maxage=43200',
+            'stale-while-revalidate=86400',
+            'stale-if-error=259200'
         ].join(', ');
         
         c.header('Cache-Control', cacheControl);
-        
-        // 添加 ETag 支持（基于最后更新时间）
-        const etag = `"${result.lastUpdate}"`;
-        c.header('ETag', etag);
-        
-        // 添加最后修改时间
+        c.header('ETag', `"${result.lastUpdate}"`);
         c.header('Last-Modified', new Date(result.lastUpdate).toUTCString());
-        
-        // 🆕 添加自定义缓存头（用于 Cloudflare 规则）
         c.header('X-Cache-Status', result.fromCache ? 'HIT' : 'MISS');
         c.header('X-Next-Update', new Date(result.nextUpdate).toISOString());
         
@@ -486,7 +633,7 @@ router.get('/schedule/:token', async (c) => {
 });
 
 /**
- * 🆕 手动刷新缓存接口
+ * 手动刷新缓存接口
  */
 router.post('/api/cache/refresh/:token', async (c) => {
     const { token } = c.req.param();
@@ -517,7 +664,7 @@ router.post('/api/cache/refresh/:token', async (c) => {
 });
 
 /**
- * 🆕 缓存统计接口
+ * 缓存统计接口
  */
 router.get('/api/cache/stats', async (c) => {
     try {
@@ -538,13 +685,12 @@ router.get('/api/cache/stats', async (c) => {
 });
 
 /**
- * 🆕 清理所有缓存接口（需要管理员密码）
+ * 清理所有缓存接口（需要管理员密码）
  */
 router.post('/api/cache/clear', async (c) => {
     try {
         const { password } = await c.req.json();
         
-        // 🆕 使用配置中的管理员密码
         if (password !== config.adminPassword) {
             return c.json({ 
                 success: false, 
@@ -585,21 +731,22 @@ router.get('/api/stats', async (c) => {
             });
         };
         
-        const [totalResult, activeResult, validResult] = await Promise.all([
+        const [totalResult, activeResult, validResult, emailResult] = await Promise.all([
             getCount('SELECT COUNT(*) as total FROM users'),
             getCount('SELECT COUNT(*) as active FROM users WHERE last_sync IS NOT NULL'),
-            getCount('SELECT COUNT(*) as valid FROM users WHERE cookie_valid = 1')
+            getCount('SELECT COUNT(*) as valid FROM users WHERE cookie_valid = 1'),
+            getCount('SELECT COUNT(*) as with_email FROM users WHERE email IS NOT NULL AND email != ""')
         ]);
         
         dbInstance.close();
         
-        // 🆕 添加缓存统计
         const cacheStats = await cacheManager.getCacheStats();
         
         return c.json({
             total_users: totalResult.total,
             active_users: activeResult.active,
             valid_cookies: validResult.valid,
+            users_with_email: emailResult.with_email,
             cache: cacheStats
         });
         

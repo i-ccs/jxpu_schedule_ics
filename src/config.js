@@ -1,4 +1,4 @@
-// ============= config.js - 配置加载模块 =============
+/// ============= config.js - 配置加载模块 (添加SMTP配置) =============
 const fs = require('fs');
 const path = require('path');
 
@@ -53,6 +53,7 @@ const config = {
     // 服务器配置
     port: parseInt(process.env.PORT || '3000', 10),
     nodeEnv: process.env.NODE_ENV || 'development',
+    baseUrl: process.env.BASE_URL || 'http://localhost:3000',
     
     // 管理员密码
     adminPassword: process.env.ADMIN_PASSWORD || 'admin123',
@@ -69,7 +70,22 @@ const config = {
     // 更新时间配置（从环境变量读取，格式: 5,13,21）
     updateHours: process.env.UPDATE_HOURS 
         ? process.env.UPDATE_HOURS.split(',').map(h => parseInt(h.trim(), 10))
-        : [5, 13, 21]
+        : [5, 13, 21],
+    
+    // SMTP 邮件配置
+    smtp: {
+        host: process.env.SMTP_HOST || 'smtp.example.com',
+        port: parseInt(process.env.SMTP_PORT || '465', 10),
+        secure: process.env.SMTP_SECURE === 'true' || process.env.SMTP_PORT === '465',
+        user: process.env.SMTP_USER || '',
+        pass: process.env.SMTP_PASS || ''
+    },
+    
+    // Cookie保活配置
+    keepalive: {
+        enabled: process.env.KEEPALIVE_ENABLED !== 'false', // 默认启用
+        interval: parseInt(process.env.KEEPALIVE_INTERVAL || '600', 10) // 秒
+    }
 };
 
 /**
@@ -88,6 +104,18 @@ function validateConfig() {
     // 检查端口
     if (config.port < 1 || config.port > 65535) {
         warnings.push('❌ 端口号无效:', config.port);
+    }
+    
+    // 检查SMTP配置
+    if (!config.smtp.user || !config.smtp.pass) {
+        warnings.push('⚠️  SMTP 邮件服务未配置，Cookie过期通知功能将无法使用');
+        warnings.push('   请设置 SMTP_HOST, SMTP_USER, SMTP_PASS 环境变量');
+    }
+    
+    // 检查BASE_URL
+    if (config.baseUrl === 'http://localhost:3000') {
+        warnings.push('⚠️  使用默认 BASE_URL，邮件中的链接可能无法访问');
+        warnings.push('   建议设置 BASE_URL 为实际的访问地址');
     }
     
     // 显示警告
@@ -109,10 +137,13 @@ function showConfig() {
     console.log('='.repeat(60));
     console.log('端口:', config.port);
     console.log('环境:', config.nodeEnv);
+    console.log('访问地址:', config.baseUrl);
     console.log('管理员密码:', config.adminPassword === 'admin123' ? '⚠️  默认密码' : '***已设置***');
     console.log('数据库路径:', config.dbPath);
     console.log('缓存目录:', config.cacheDir);
     console.log('更新时间:', config.updateHours.join(', ') + ' 点');
+    console.log('Cookie保活:', config.keepalive.enabled ? `✅ 已启用 (每${config.keepalive.interval}小时)` : '❌ 已禁用');
+    console.log('SMTP服务:', config.smtp.user ? `✅ ${config.smtp.host}:${config.smtp.port}` : '❌ 未配置');
     console.log('='.repeat(60));
     console.log();
 }

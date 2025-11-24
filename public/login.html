@@ -142,6 +142,14 @@
             <label>学期开始日期 (第一周周一):</label>
             <input type="date" id="semester_start" value="2025-09-08">
         </div>
+
+        <div class="form-group" id="emailGroup" style="display:none;">
+            <label>接收通知的邮箱 (可选):</label>
+            <input type="email" id="email" placeholder="your-email@example.com">
+            <p style="font-size: 12px; color: #666; margin-top: 5px;">
+                💡 设置邮箱后，Cookie过期时会收到邮件提醒
+            </p>
+        </div>
         
         <div id="result" style="display:none;"></div>
     </div>
@@ -235,6 +243,7 @@
                 btn.style.display = 'block';
                 btn.disabled = false;
                 document.getElementById('semesterGroup').style.display = 'block';
+                document.getElementById('emailGroup').style.display = 'block';
                 
                 expiryTime = Date.now() + 127 * 1000;
                 timerInterval = setInterval(updateTimer, 1000);
@@ -352,6 +361,7 @@
     
     async function completeLogin() {
         const semester_start = document.getElementById('semester_start').value;
+        const email = document.getElementById('email').value || null; // 🆕 获取邮箱
         const result = document.getElementById('result');
         const status = document.getElementById('status');
         
@@ -366,7 +376,8 @@
                 body: JSON.stringify({
                     qrCodeId: currentQrCodeId,
                     stateKey: currentStateKey,
-                    semester_start: semester_start
+                    semester_start: semester_start,
+                    email: email // 🆕 发送邮箱
                 })
             });
             
@@ -400,14 +411,21 @@
                     status.className = 'status success';
                     status.textContent = '✅ 登录成功！';
                     log('🎉 订阅链接生成成功');
-                    
+
                     result.className = 'result success';
                     result.innerHTML = `
+                        
                         <h3 style="margin-bottom: 10px;">🎉 订阅链接生成成功！</h3>
                         <p style="margin: 10px 0;"><strong>订阅链接：</strong></p>
                         <p style="background: white; padding: 10px; border-radius: 4px; word-break: break-all;">
                             <code>${url}</code>
                         </p>
+                        <!-- 🆕 邮箱管理 -->
+                        <div style="margin-top: 20px; padding: 15px; background: #f6f8fa; border-radius: 6px;">
+                            <h4>📧 邮件通知设置</h4>
+                            <input type="email" id="update-email" placeholder="输入邮箱接收通知" value="${email || ''}">
+                            <button onclick="updateEmail('${data.token}')">保存邮箱</button>
+                        </div>
                         <div class="action-buttons">
                             <button class="btn-copy" onclick="copyToClipboard('${url}')">📋 复制链接</button>
                             <button class="btn-copy" onclick="downloadICS('${data.token}')" style="background: #6f42c1;">📥 下载课表</button>
@@ -417,6 +435,7 @@
                             💡 将订阅链接添加到日历应用，或直接下载 ICS 文件导入
                         </p>
                     `;
+
                 }
                 
                 result.style.display = 'block';
@@ -498,6 +517,27 @@
             }
         } catch (error) {
             alert('❌ 网络错误：' + error.message);
+        }
+    }
+
+    async function updateEmail(token) {
+        const email = document.getElementById('update-email').value;
+        if (!email) {
+            alert('请输入邮箱地址');
+            return;
+        }
+        
+        const response = await fetch(`/api/user/${token}/email`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ email })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            alert('✅ 邮箱已保存，将收到测试邮件');
+        } else {
+            alert('❌ ' + data.error);
         }
     }
     

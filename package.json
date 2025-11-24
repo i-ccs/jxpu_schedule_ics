@@ -1,13 +1,15 @@
 {
   "name": "schedule-subscription-service",
-  "version": "0.2.1",
-  "description": "课表订阅服务 - 江西职业技术大学 (Hono + Fetch API + CDN Cache)",
+  "version": "0.3.0",
+  "description": "课表订阅服务 - 江西职业技术大学 (Hono + Fetch API + CDN Cache + Email Notification)",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "cache:clear": "node -e \"require('./src/cache-manager').clearAllCache()\"",
-    "cache:stats": "curl http://localhost:3000/api/cache/stats"
+    "cache:stats": "curl http://localhost:3000/api/cache/stats",
+    "keepalive:check": "curl -X POST http://localhost:3000/api/keepalive/check-all -H 'Content-Type: application/json' -d '{\"password\":\"admin123\"}'",
+    "test:email": "node -e \"require('./src/mailer').sendTestEmail('your-email@example.com').then(r => console.log(r ? '✅ 测试成功' : '❌ 测试失败'))\""
   },
   "keywords": [
     "schedule",
@@ -18,7 +20,10 @@
     "fetch",
     "cdn",
     "cache",
-    "cloudflare"
+    "cloudflare",
+    "email",
+    "notification",
+    "keepalive"
   ],
   "author": "",
   "license": "MIT",
@@ -27,7 +32,8 @@
     "@hono/node-server": "^1.8.0",
     "cheerio": "^1.0.0-rc.12",
     "ical-generator": "^4.1.0",
-    "sqlite3": "^5.1.6"
+    "sqlite3": "^5.1.6",
+    "nodemailer": "^6.9.7"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
